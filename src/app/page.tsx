@@ -1,45 +1,165 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Image from 'next/image';
+import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 
 interface ChatbotState {
   isOpen: boolean;
   showDetails: boolean;
 }
 
+interface Platform {
+  value: string;
+  label: string;
+  icon: string;
+  color: string;
+}
+
+const platforms: Platform[] = [
+  {
+    value: "flipkart",
+    label: "Flipkart",
+    icon: "🛒",
+    color: "from-orange-500 to-yellow-500",
+  },
+  {
+    value: "amazon",
+    label: "Amazon",
+    icon: "📦",
+    color: "from-orange-600 to-yellow-600",
+  },
+  {
+    value: "bigbasket",
+    label: "Big Basket",
+    icon: "🥬",
+    color: "from-green-500 to-green-600",
+  },
+];
+
 export default function Home() {
   const [formData, setFormData] = useState({
-    scrapeSite: '',
-    productName: '',
-    outputFolder: '',
-    recipientEmail: ''
+    scrapeSite: "",
+    productName: "",
+    outputFolder: "",
+    recipientEmail: "",
   });
 
   const [chatbot, setChatbot] = useState<ChatbotState>({
     isOpen: false,
-    showDetails: false
+    showDetails: false,
   });
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     });
   };
 
+  const handlePlatformSelect = (platform: Platform) => {
+    setFormData({
+      ...formData,
+      scrapeSite: platform.value,
+    });
+    setIsDropdownOpen(false);
+  };
+
+  const handleDropdownKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape") {
+      setIsDropdownOpen(false);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setIsDropdownOpen(!isDropdownOpen);
+    } else if (event.key === "ArrowDown" && !isDropdownOpen) {
+      event.preventDefault();
+      setIsDropdownOpen(true);
+    }
+  };
+
+  const handleFolderSelect = async () => {
+    try {
+      // Check if the browser supports the File System Access API
+      if ("showDirectoryPicker" in window) {
+        // @ts-ignore - TypeScript doesn't know about showDirectoryPicker yet
+        const directoryHandle = await window.showDirectoryPicker();
+        setFormData({
+          ...formData,
+          outputFolder: directoryHandle.name,
+        });
+      } else {
+        // Fallback: use directory input
+        if (folderInputRef.current) {
+          folderInputRef.current.click();
+        }
+      }
+    } catch (error) {
+      // User cancelled or error occurred
+      console.log("Folder selection cancelled or failed");
+    }
+  };
+
+  const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      // Get the path from the first file (webkitRelativePath gives us the folder structure)
+      const firstFile = files[0];
+      // @ts-ignore - webkitRelativePath exists on File objects
+      const relativePath = firstFile.webkitRelativePath;
+      if (relativePath) {
+        // Extract just the folder name (first part of the path)
+        const folderName = relativePath.split("/")[0];
+        setFormData({
+          ...formData,
+          outputFolder: folderName,
+        });
+      }
+    }
+  };
+
   const handleStart = () => {
-    if (!formData.scrapeSite || !formData.productName || !formData.outputFolder || !formData.recipientEmail) {
-      alert('Please fill in all fields');
+    if (
+      !formData.scrapeSite ||
+      !formData.productName ||
+      !formData.outputFolder ||
+      !formData.recipientEmail
+    ) {
+      alert("Please fill in all fields");
       return;
     }
     setIsProcessing(true);
     // Simulate processing
     setTimeout(() => {
       setIsProcessing(false);
-      alert('Scraping process started! You will receive an email notification when complete.');
+      alert(
+        "Scraping process started! You will receive an email notification when complete."
+      );
     }, 2000);
   };
 
@@ -54,6 +174,10 @@ export default function Home() {
   const backToMain = () => {
     setChatbot({ ...chatbot, showDetails: false });
   };
+
+  const selectedPlatform = platforms.find(
+    (p) => p.value === formData.scrapeSite
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-red-900 relative overflow-hidden">
@@ -81,22 +205,79 @@ export default function Home() {
         <div className="max-w-2xl mx-auto">
           <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/20">
             <div className="space-y-6">
-              {/* Scraping Site Dropdown */}
-              <div className="group">
+              {/* Scraping Site Custom Dropdown */}
+              <div className="group relative" ref={dropdownRef}>
                 <label className="block text-white text-sm font-medium mb-2 group-hover:text-blue-300 transition-colors">
                   From which site do you want to scrape?
                 </label>
-                <select
-                  name="scrapeSite"
-                  value={formData.scrapeSite}
-                  onChange={handleInputChange}
-                  className="w-full p-4 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all duration-300 hover:bg-white/30"
-                >
-                  <option value="" className="text-gray-800">Select a platform</option>
-                  <option value="flipkart" className="text-gray-800">Flipkart</option>
-                  <option value="amazon" className="text-gray-800">Amazon</option>
-                  <option value="bigbasket" className="text-gray-800">Big Basket</option>
-                </select>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    onKeyDown={handleDropdownKeyDown}
+                    aria-expanded={isDropdownOpen}
+                    aria-haspopup="listbox"
+                    className="w-full p-4 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white text-left focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all duration-300 hover:bg-white/30 flex items-center justify-between"
+                  >
+                    <div className="flex items-center">
+                      {selectedPlatform ? (
+                        <>
+                          <span className="text-2xl mr-3">
+                            {selectedPlatform.icon}
+                          </span>
+                          <span className="font-medium">
+                            {selectedPlatform.label}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-white/60">Select a platform</span>
+                      )}
+                    </div>
+                    <svg
+                      className={`w-5 h-5 transition-transform duration-200 ${
+                        isDropdownOpen ? "rotate-180" : ""
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  </button>
+
+                  {isDropdownOpen && (
+                    <div
+                      className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-lg rounded-xl shadow-2xl border border-white/20 overflow-hidden z-50 animate-fade-in"
+                      role="listbox"
+                    >
+                      {platforms.map((platform) => (
+                        <button
+                          key={platform.value}
+                          type="button"
+                          onClick={() => handlePlatformSelect(platform)}
+                          role="option"
+                          aria-selected={formData.scrapeSite === platform.value}
+                          className="w-full p-4 text-left hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all duration-200 flex items-center group/item"
+                        >
+                          <span className="text-2xl mr-3 group-hover/item:scale-110 transition-transform duration-200">
+                            {platform.icon}
+                          </span>
+                          <span className="font-medium text-gray-800 group-hover/item:text-blue-700">
+                            {platform.label}
+                          </span>
+                          <div
+                            className={`ml-auto w-3 h-3 rounded-full bg-gradient-to-r ${platform.color} opacity-0 group-hover/item:opacity-100 transition-opacity duration-200`}
+                          ></div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Product Name Input */}
@@ -114,18 +295,52 @@ export default function Home() {
                 />
               </div>
 
-              {/* Output Folder Input */}
+              {/* Output Folder Input with Folder Picker */}
               <div className="group">
                 <label className="block text-white text-sm font-medium mb-2 group-hover:text-pink-300 transition-colors">
                   Folder in which you want to save the output and all images?
                 </label>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    name="outputFolder"
+                    value={formData.outputFolder}
+                    onChange={handleInputChange}
+                    placeholder="e.g., /downloads/scraped-data"
+                    className="flex-1 p-4 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-transparent transition-all duration-300 hover:bg-white/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleFolderSelect}
+                    className="px-6 py-4 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-medium rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg flex items-center gap-2 whitespace-nowrap"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"
+                      />
+                    </svg>
+                    Browse
+                  </button>
+                </div>
+
+                {/* Hidden file input for directory selection fallback */}
                 <input
-                  type="text"
-                  name="outputFolder"
-                  value={formData.outputFolder}
-                  onChange={handleInputChange}
-                  placeholder="e.g., /downloads/scraped-data"
-                  className="w-full p-4 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-transparent transition-all duration-300 hover:bg-white/30"
+                  ref={folderInputRef}
+                  type="file"
+                  // @ts-ignore - webkitdirectory is a valid attribute
+                  webkitdirectory=""
+                  directory=""
+                  multiple
+                  onChange={handleFolderInputChange}
+                  className="hidden"
                 />
               </div>
 
@@ -157,7 +372,7 @@ export default function Home() {
                       Processing...
                     </div>
                   ) : (
-                    'Start Scraping'
+                    "Start Scraping"
                   )}
                 </button>
               </div>
@@ -170,7 +385,7 @@ export default function Home() {
       <div className="fixed bottom-8 right-8 z-50">
         {/* Gradient Circle Background */}
         <div className="absolute inset-0 bg-gradient-to-r from-blue-400 via-purple-400 to-red-400 rounded-full animate-pulse opacity-75 scale-110"></div>
-        
+
         {/* Chatbot Button */}
         <div className="relative">
           <button
@@ -195,7 +410,7 @@ export default function Home() {
             {!chatbot.showDetails ? (
               <div className="p-6">
                 <div className="flex items-center mb-4">
-                                     <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-blue-700 rounded-full flex items-center justify-center mr-3">
+                  <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-blue-700 rounded-full flex items-center justify-center mr-3">
                     <Image
                       src="/Live chatbot.gif"
                       alt="AI Agent"
@@ -205,30 +420,48 @@ export default function Home() {
                     />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-800">AI Agent Assistant</h3>
+                    <h3 className="font-bold text-gray-800">
+                      AI Agent Assistant
+                    </h3>
                     <div className="flex items-center">
                       <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
                       <span className="text-sm text-green-600">Online</span>
                     </div>
                   </div>
                 </div>
-                
-                                 <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-4 mb-4 border border-blue-200">
-                   <p className="text-blue-900 text-sm leading-relaxed">
-                     Hi! I am an intelligent, automated AI agent designed to streamline and enhance the process of validating digital purchase information from different shopping sites. I have <span className="font-bold text-blue-700">5 agents</span> working in the backend.
-                   </p>
-                 </div>
-                
+
+                <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-4 mb-4 border border-blue-200">
+                  <p className="text-blue-900 text-sm leading-relaxed">
+                    Hi! I am an intelligent, automated AI agent designed to
+                    streamline and enhance the process of validating digital
+                    purchase information from different shopping sites. I have{" "}
+                    <span className="font-bold text-blue-700">5 agents</span>{" "}
+                    working in the backend.
+                  </p>
+                </div>
+
                 <div className="text-center">
-                  <p className="text-gray-600 text-sm mb-3">Want to know more?</p>
-                                     <button
-                     onClick={showDetails}
-                     className="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-lg hover:shadow-lg hover:from-blue-600 hover:to-blue-800 transition-all duration-300 transform hover:scale-105 shadow-blue-500/30"
-                   >
+                  <p className="text-gray-600 text-sm mb-3">
+                    Want to know more?
+                  </p>
+                  <button
+                    onClick={showDetails}
+                    className="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-lg hover:shadow-lg hover:from-blue-600 hover:to-blue-800 transition-all duration-300 transform hover:scale-105 shadow-blue-500/30"
+                  >
                     <span className="flex items-center">
                       Learn More
-                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      <svg
+                        className="w-4 h-4 ml-2"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
                       </svg>
                     </span>
                   </button>
@@ -242,36 +475,78 @@ export default function Home() {
                     onClick={backToMain}
                     className="text-gray-500 hover:text-gray-700 transition-colors"
                   >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <svg
+                      className="w-6 h-6"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
                     </svg>
                   </button>
                 </div>
-                
+
                 <div className="space-y-4 text-sm text-gray-700">
                   <div className="border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 rounded-r-lg">
-                    <h4 className="font-semibold text-blue-700 mb-1">🔗 Purchase Link Scraping</h4>
-                    <p>The AI initiates its process by intelligently scraping designated online purchase links. This involves navigating to the provided URL and extracting relevant content, preparing it for subsequent analysis.</p>
+                    <h4 className="font-semibold text-blue-700 mb-1">
+                      🔗 Purchase Link Scraping
+                    </h4>
+                    <p>
+                      The AI initiates its process by intelligently scraping
+                      designated online purchase links. This involves navigating
+                      to the provided URL and extracting relevant content,
+                      preparing it for subsequent analysis.
+                    </p>
                   </div>
-                  
+
                   <div className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r-lg">
-                    <h4 className="font-semibold text-purple-700 mb-1">🖼️ Image Extraction & Processing</h4>
-                    <p>From the scraped web pages, the system identifies and extracts all embedded images. These images are then queued for advanced processing.</p>
+                    <h4 className="font-semibold text-purple-700 mb-1">
+                      🖼️ Image Extraction & Processing
+                    </h4>
+                    <p>
+                      From the scraped web pages, the system identifies and
+                      extracts all embedded images. These images are then queued
+                      for advanced processing.
+                    </p>
                   </div>
-                  
+
                   <div className="border-l-4 border-green-500 pl-4 py-2 bg-green-50 rounded-r-lg">
-                    <h4 className="font-semibold text-green-700 mb-1">👁️ Optical Character Recognition (OCR)</h4>
-                    <p>Utilizing state-of-the-art OCR technology, the AI meticulously scans each extracted image to identify and extract any embedded text.</p>
+                    <h4 className="font-semibold text-green-700 mb-1">
+                      👁️ Optical Character Recognition (OCR)
+                    </h4>
+                    <p>
+                      Utilizing state-of-the-art OCR technology, the AI
+                      meticulously scans each extracted image to identify and
+                      extract any embedded text.
+                    </p>
                   </div>
-                  
+
                   <div className="border-l-4 border-red-500 pl-4 py-2 bg-red-50 rounded-r-lg">
-                    <h4 className="font-semibold text-red-700 mb-1">📱 QR Code Validation</h4>
-                    <p>A critical component is its ability to detect and validate QR codes present within the extracted images. The AI performs robust validation checks for legitimacy and structural integrity.</p>
+                    <h4 className="font-semibold text-red-700 mb-1">
+                      📱 QR Code Validation
+                    </h4>
+                    <p>
+                      A critical component is its ability to detect and validate
+                      QR codes present within the extracted images. The AI
+                      performs robust validation checks for legitimacy and
+                      structural integrity.
+                    </p>
                   </div>
-                  
+
                   <div className="border-l-4 border-yellow-500 pl-4 py-2 bg-yellow-50 rounded-r-lg">
-                    <h4 className="font-semibold text-yellow-700 mb-1">📧 Automated Notification</h4>
-                    <p>Upon completion of the validation process, the AI automatically triggers an email notification, ensuring immediate communication of the validation outcome.</p>
+                    <h4 className="font-semibold text-yellow-700 mb-1">
+                      📧 Automated Notification
+                    </h4>
+                    <p>
+                      Upon completion of the validation process, the AI
+                      automatically triggers an email notification, ensuring
+                      immediate communication of the validation outcome.
+                    </p>
                   </div>
                 </div>
               </div>
