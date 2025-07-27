@@ -20,24 +20,44 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import os
+import sys
 import glob
 
-# Set the hotfolder path where the Excel files are saved
-HOTFOLDER_PATH = r'C:\Users\souvi\Downloads\sunfeast'
+# Configure UTF-8 encoding for console output (fixes Windows Unicode issues)
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    # Python < 3.7 doesn't have reconfigure, try setting environment variable
+    import locale
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+
+# Get parameters from command line
+if len(sys.argv) < 3:
+    print("Usage: python exception_reporter.py <output_folder> <recipient_email>")
+    sys.exit(1)
+
+HOTFOLDER_PATH = sys.argv[1]
+RECIPIENT_EMAIL = sys.argv[2]
+
+# Find the Excel files dynamically based on what's available
+excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('.xlsx')]
+analysis_files = [f for f in excel_files if f.endswith('_product_analysis.xlsx')]
+merged_files = [f for f in excel_files if f.endswith('_merged_analysis.xlsx')]
 
 # Define the specific Excel files to attach
-REQUIRED_FILES = [
-    "sunfeast_product_analysis.xlsx",  # From Agent 1
-    "sunfeast_merged_analysis.xlsx",   # From Agent 4 Text Merger
-]
+REQUIRED_FILES = []
+if analysis_files:
+    REQUIRED_FILES.append(analysis_files[0])  # Product analysis file
+if merged_files:
+    REQUIRED_FILES.append(merged_files[0])    # Merged analysis file
 
 # Pattern for QR/Barcode results (timestamped files)
 QR_BARCODE_PATTERN = "qr_barcode_results_*.xlsx"
 
-# Set the sender and recipient email
+# Set the sender email
 SENDER_EMAIL = 'souvikmakur2003@gmail.com'
 SENDER_PASS = 'feuz htpc mfha ayhn'
-RECIPIENT_EMAIL = 'souvikmakur45@gmail.com'
 
 # Gmail SMTP settings
 SMTP_SERVER = 'smtp.gmail.com'
@@ -124,21 +144,26 @@ def main():
             print("   • Agent 4: Text Merger")
             return
         
+        # Extract product name from the first analysis file for dynamic subject
+        product_name = "Products"
+        if analysis_files:
+            product_name = analysis_files[0].replace('_product_analysis.xlsx', '').title()
+
         # Enhanced email content
-        email_subject = "Complete Product Analysis Results - Sunfeast"
+        email_subject = f"Complete Product Analysis Results - {product_name}"
         
         file_list = "\n".join([f"   • {os.path.basename(path)}" for path in attachment_paths])
         
         email_body = f"""
 Complete Product Analysis Results
 
-Please find the attached comprehensive analysis files for Sunfeast products:
+Please find the attached comprehensive analysis files for {product_name} products:
 
 {file_list}
 
 File Descriptions:
-• sunfeast_product_analysis.xlsx: Original product analysis with ITC classification, ratings, and specifications
-• sunfeast_merged_analysis.xlsx: Complete analysis with extracted text from images and contact information
+• *_product_analysis.xlsx: Original product analysis with ITC classification, ratings, and specifications
+• *_merged_analysis.xlsx: Complete analysis with extracted text from images and contact information
 • qr_barcode_results_[timestamp].xlsx: QR code and barcode detection results with URL redirects
 
 Total files attached: {len(attachment_paths)}

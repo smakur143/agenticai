@@ -13,16 +13,40 @@ Features:
 """
 
 import os
+import sys
 import pandas as pd
 import glob
 import re
 from pathlib import Path
 
-# Configuration
-HOTFOLDER_PATH = r'C:\Users\souvi\Downloads\sunfeast'
-INPUT_EXCEL_FILE = "sunfeast_product_analysis.xlsx"
+# Configure UTF-8 encoding for console output (fixes Windows Unicode issues)
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    # Python < 3.7 doesn't have reconfigure, try setting environment variable
+    import locale
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+
+# Get parameters from command line
+if len(sys.argv) < 2:
+    print("Usage: python credential_check.py <output_folder>")
+    sys.exit(1)
+
+HOTFOLDER_PATH = sys.argv[1]
+
+# Find the product analysis Excel file dynamically
+excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_product_analysis.xlsx')]
+if not excel_files:
+    print("❌ No product analysis Excel file found. Please run previous agents first.")
+    sys.exit(1)
+
+INPUT_EXCEL_FILE = excel_files[0]
 INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
-OUTPUT_EXCEL_FILE = "sunfeast_merged_analysis.xlsx"
+
+# Extract product name from the Excel file name to create output file name
+product_name = INPUT_EXCEL_FILE.replace('_product_analysis.xlsx', '')
+OUTPUT_EXCEL_FILE = f"{product_name}_merged_analysis.xlsx"
 OUTPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, OUTPUT_EXCEL_FILE)
 
 def classify_text(text):

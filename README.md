@@ -1,36 +1,133 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Agentic AI - Automated Product Scraping Workflow
 
-## Getting Started
+A comprehensive web application that orchestrates 6 AI agents to automate product analysis, image extraction, text processing, QR code detection, and reporting.
 
-First, run the development server:
+## 🚀 Features
+
+- **Multi-Agent Workflow**: 6 specialized agents working in sequence
+- **Real-time Progress Tracking**: Live updates with Server-Sent Events
+- **Amazon Product Scraping**: Automated product data extraction
+- **Image Processing**: High-resolution image downloading and text extraction
+- **QR Code Detection**: Automated QR/barcode scanning with redirect following
+- **Contact Information Extraction**: Phone, email, and FSSAI number detection
+- **Automated Reporting**: Email delivery of comprehensive Excel reports
+
+## 🏗️ Architecture
+
+### Frontend (Next.js)
+
+- Modern React-based web interface
+- Real-time progress tracking
+- Responsive design with Tailwind CSS
+
+### Backend (Python Scripts)
+
+1. **Product Analyzer** - Scrapes Amazon product listings
+2. **Image Scraper** - Downloads product images
+3. **Text Extractor** - Uses Google Gemini Vision API for OCR
+4. **QR Orchestrator** - Detects and processes QR codes/barcodes
+5. **Credential Checker** - Merges data and extracts contact info
+6. **Email Reporter** - Sends comprehensive reports
+
+## 🛠️ Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- Python 3.8+
+- Google Chrome
+- ChromeDriver
+
+### Installation
+
+1. **Clone and setup:**
+
+```bash
+git clone <repository>
+cd agenticai
+npm install
+```
+
+2. **Install Python dependencies:**
+
+```bash
+pip install -r requirements.txt
+```
+
+3. **Configure API keys:**
+
+   - Update Gemini API key in `scripts/text_extractor.py`
+   - Update email credentials in `scripts/exception_reporter.py`
+
+4. **Start the application:**
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+5. **Open browser:**
+   Navigate to `http://localhost:3000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📋 Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. **Select scraping site** (Currently Amazon only)
+2. **Enter product name** (e.g., "aashirvaad")
+3. **Choose output folder** for results
+4. **Enter recipient email** for reports
+5. **Click "Start Scraping"** and watch real-time progress
 
-## Learn More
+## 📊 Output Files
 
-To learn more about Next.js, take a look at the following resources:
+- `{product}_product_analysis.xlsx` - Product details and ITC classification
+- `{product}_merged_analysis.xlsx` - Complete analysis with extracted text
+- `qr_barcode_results_{timestamp}.xlsx` - QR/barcode detection results
+- Individual product folders with images and text extraction results
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🔧 Configuration
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Environment Variables
 
-## Deploy on Vercel
+Create `.env.local` for sensitive data:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+GEMINI_API_KEY=your_api_key
+SENDER_EMAIL=your_email@gmail.com
+SENDER_PASSWORD=your_app_password
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Supported Platforms
+
+- Currently: Amazon India
+- Planned: Flipkart, BigBasket
+
+## 📚 Documentation
+
+See [SETUP.md](SETUP.md) for detailed setup instructions and troubleshooting.
+
+## 🔒 Security
+
+- Use environment variables for API keys
+- Enable 2FA for email accounts
+- Respect website terms of service
+- Monitor API usage and rate limits
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create feature branch
+3. Commit changes
+4. Push to branch
+5. Create pull request
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+## 🆘 Support
+
+For issues or questions:
+
+- Check console output for errors
+- Verify all dependencies are installed
+- Ensure API keys are configured
+- Review file permissions

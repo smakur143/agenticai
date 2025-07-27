@@ -15,6 +15,7 @@ Features:
 
 import time
 import os
+import sys
 import requests
 import pandas as pd
 import re
@@ -33,9 +34,36 @@ try:
 except ImportError:
     UC_AVAILABLE = False
 
-# Setup paths
-HOTFOLDER_PATH = r"C:\Users\souvi\Downloads\aashirvaad"
-INPUT_EXCEL_FILE = "aashirvaad_product_analysis.xlsx"
+# Configure UTF-8 encoding for console output (fixes Windows Unicode issues)
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    # Python < 3.7 doesn't have reconfigure, try setting environment variable
+    import locale
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+
+# Get parameters from command line
+if len(sys.argv) < 2:
+    print("Usage: python image_scraper.py <output_folder>")
+    sys.exit(1)
+
+HOTFOLDER_PATH = sys.argv[1]
+
+# Debug output to show paths being used
+print(f"🔧 DEBUG: Image Scraper arguments received:")
+print(f"   • Output Folder (Raw): {HOTFOLDER_PATH}")
+print(f"   • Output Folder (Absolute): {os.path.abspath(HOTFOLDER_PATH)}")
+print(f"   • Current Working Directory: {os.getcwd()}")
+print("🔧 END DEBUG INFO\n")
+
+# Setup paths - Find the product analysis Excel file dynamically
+excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_product_analysis.xlsx')]
+if not excel_files:
+    print("❌ No product analysis Excel file found. Please run product_analyzer.py first.")
+    sys.exit(1)
+
+INPUT_EXCEL_FILE = excel_files[0]  # Use the first (should be only one) analysis file
 INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
 
 # Try undetected_chromedriver first, fallback to regular selenium
@@ -87,7 +115,10 @@ def scrape_product_images(product_url, product_title, product_idx, product_folde
         print(f"📁 Saving images to folder: {os.path.basename(product_folder)}")
         
         # Create product folder if it doesn't exist
+        print(f"📁 Creating product folder: {product_folder}")
+        print(f"📁 Absolute path: {os.path.abspath(product_folder)}")
         os.makedirs(product_folder, exist_ok=True)
+        print(f"✅ Product folder created: {product_folder}")
         
         # Create a product info file in the folder
         info_file_path = os.path.join(product_folder, "product_info.txt")

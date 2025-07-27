@@ -1,5 +1,6 @@
 import time
 import os
+import sys
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -31,10 +32,40 @@ except ImportError:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
 
+# Configure UTF-8 encoding for console output (fixes Windows Unicode issues)
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    # Python < 3.7 doesn't have reconfigure, try setting environment variable
+    import locale
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+
+# Get parameters from command line
+if len(sys.argv) < 4:
+    print("Usage: python product_analyzer.py <scrape_site> <product_name> <output_folder>")
+    sys.exit(1)
+
+SCRAPE_SITE = sys.argv[1]
+PRODUCT_NAME = sys.argv[2]
+HOTFOLDER_PATH = sys.argv[3]
+
+# Debug output to show paths being used
+print(f"🔧 DEBUG: Script arguments received:")
+print(f"   • Scrape Site: {SCRAPE_SITE}")
+print(f"   • Product Name: {PRODUCT_NAME}")
+print(f"   • Output Folder (Raw): {HOTFOLDER_PATH}")
+print(f"   • Output Folder (Absolute): {os.path.abspath(HOTFOLDER_PATH)}")
+print(f"   • Current Working Directory: {os.getcwd()}")
+
 # Setup Chrome driver and image folder
-HOTFOLDER_PATH = r"C:\Users\souvi\Downloads\aashirvaad"
-OUTPUT_EXCEL_FILE = "aashirvaad_product_analysis.xlsx"
+OUTPUT_EXCEL_FILE = f"{PRODUCT_NAME.lower().replace(' ', '_')}_product_analysis.xlsx"
 OUTPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, OUTPUT_EXCEL_FILE)
+
+print(f"   • Excel File Name: {OUTPUT_EXCEL_FILE}")
+print(f"   • Excel File Path: {OUTPUT_EXCEL_PATH}")
+print(f"   • Excel File Path (Absolute): {os.path.abspath(OUTPUT_EXCEL_PATH)}")
+print("🔧 END DEBUG INFO\n")
 
 # Try undetected_chromedriver first, fallback to regular selenium
 driver = None
@@ -396,7 +427,10 @@ def check_itc_product(url, product_title):
 
 def main():
     try:
+        print(f"📁 Creating output folder: {HOTFOLDER_PATH}")
+        print(f"📁 Absolute path: {os.path.abspath(HOTFOLDER_PATH)}")
         os.makedirs(HOTFOLDER_PATH, exist_ok=True)
+        print(f"✅ Output folder created/verified: {HOTFOLDER_PATH}")
         
         print("🔐 Logging into Amazon...")
         # Login to Amazon
@@ -478,14 +512,14 @@ def main():
             print(f"❌ Login failed: {e}")
             print("Continuing without login")
 
-        # Search for aashirvaad products
-        print("\n🔍 Searching for aashirvaad products...")
+        # Search for products
+        print(f"\n🔍 Searching for {PRODUCT_NAME} products...")
         try:
             search_box = driver.find_element(By.ID, "twotabsearchtextbox")
             search_box.clear()
-            search_box.send_keys("aashirvaad")
+            search_box.send_keys(PRODUCT_NAME)
             search_box.send_keys(Keys.RETURN)
-            print("✅ Search executed successfully for aashirvaad")
+            print(f"✅ Search executed successfully for {PRODUCT_NAME}")
             time.sleep(5)
         except Exception as e:
             print(f"❌ Failed to search: {e}")
@@ -606,6 +640,8 @@ def main():
         print(f"⭐ Extracted product ratings and detailed specifications")
         print(f"📁 Results saved to: {OUTPUT_EXCEL_FILE}")
         print(f"📂 Location: {HOTFOLDER_PATH}")
+        print(f"📂 Absolute location: {os.path.abspath(HOTFOLDER_PATH)}")
+        print(f"📄 Full Excel path: {os.path.abspath(OUTPUT_EXCEL_PATH)}")
 
     except Exception as e:
         print(f"❌ Error in main process: {e}")

@@ -17,6 +17,7 @@ Features:
 
 import time
 import os
+import sys
 import pandas as pd
 import glob
 import cv2
@@ -30,10 +31,31 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from datetime import datetime
 
-# Configuration
-HOTFOLDER_PATH = r'C:\Users\souvi\Downloads\sunfeast'
-INPUT_EXCEL_FILE = "sunfeast_product_analysis.xlsx"
-INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
+# Configure UTF-8 encoding for console output (fixes Windows Unicode issues)
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    # Python < 3.7 doesn't have reconfigure, try setting environment variable
+    import locale
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+
+# Get parameters from command line
+if len(sys.argv) < 2:
+    print("Usage: python qr_orchestrator.py <output_folder>")
+    sys.exit(1)
+
+HOTFOLDER_PATH = sys.argv[1]
+
+# Find the product analysis Excel file dynamically (optional for QR detection)
+excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_product_analysis.xlsx')]
+if excel_files:
+    INPUT_EXCEL_FILE = excel_files[0]
+    INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
+else:
+    INPUT_EXCEL_FILE = None
+    INPUT_EXCEL_PATH = None
+
 QR_RESULTS_EXCEL = "qr_detection_results.xlsx"
 QR_RESULTS_PATH = os.path.join(HOTFOLDER_PATH, QR_RESULTS_EXCEL)
 

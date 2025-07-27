@@ -15,6 +15,7 @@ Features:
 
 import time
 import os
+import sys
 import requests
 import base64
 import pandas as pd
@@ -23,8 +24,30 @@ from pathlib import Path
 
 # CONFIGURATION
 API_KEY = "AIzaSyBp_t3Qo6E1W6nzm6ryNGGIlfrdAdXl8tY"
-HOTFOLDER_PATH = r"C:\Users\souvi\Downloads\aashirvaad"
-INPUT_EXCEL_FILE = "aashirvaad_product_analysis.xlsx"
+
+# Configure UTF-8 encoding for console output (fixes Windows Unicode issues)
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    # Python < 3.7 doesn't have reconfigure, try setting environment variable
+    import locale
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+
+# Get parameters from command line
+if len(sys.argv) < 2:
+    print("Usage: python text_extractor.py <output_folder>")
+    sys.exit(1)
+
+HOTFOLDER_PATH = sys.argv[1]
+
+# Find the product analysis Excel file dynamically
+excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_product_analysis.xlsx')]
+if not excel_files:
+    print("❌ No product analysis Excel file found. Please run previous agents first.")
+    sys.exit(1)
+
+INPUT_EXCEL_FILE = excel_files[0]  # Use the first (should be only one) analysis file
 INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
 
 # PROMPT for text extraction

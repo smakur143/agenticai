@@ -50,8 +50,12 @@ export default function Home() {
   });
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string>("");
+  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [progressStep, setProgressStep] = useState<number>(0);
+  const [totalSteps, setTotalSteps] = useState<number>(6);
+  const [progressDetails, setProgressDetails] = useState<string>("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown when clicking outside
@@ -103,97 +107,47 @@ export default function Home() {
     }
   };
 
-  const handleFolderSelect = async () => {
-    try {
-      // Check if the browser supports the File System Access API
-      if ("showDirectoryPicker" in window) {
-        // @ts-ignore - TypeScript doesn't know about showDirectoryPicker yet
-        const directoryHandle = await window.showDirectoryPicker();
 
-        // File System Access API doesn't provide full system paths for security reasons
-        // So we'll create a placeholder path that the user can edit
-        const isWindows = navigator.userAgent.includes("Windows");
-        const userName = "User"; // We can't access the actual username from browser
 
-        let suggestedPath;
-        if (isWindows) {
-          suggestedPath = `C:\\Users\\${userName}\\Desktop\\${directoryHandle.name}`;
-        } else {
-          suggestedPath = `/Users/${userName}/Desktop/${directoryHandle.name}`;
+  const connectToProgressStream = (sessionId: string) => {
+    const eventSource = new EventSource(`/api/progress?sessionId=${sessionId}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setProgressStep(data.step);
+        setTotalSteps(data.total);
+        setProcessingStatus(data.message);
+        setProgressDetails(data.details || "");
+
+        if (data.status === "completed") {
+          setIsProcessing(false);
+          eventSource.close();
+          // Clear progress after some time
+          setTimeout(() => {
+            setProcessingStatus("");
+            setProgressStep(0);
+            setProgressDetails("");
+          }, 5000);
+        } else if (data.status === "error") {
+          setErrorMessage(data.message);
+          setIsProcessing(false);
+          eventSource.close();
         }
-
-        setFormData({
-          ...formData,
-          outputFolder: suggestedPath,
-        });
-      } else {
-        // Fallback: use directory input
-        if (folderInputRef.current) {
-          folderInputRef.current.click();
-        }
+      } catch (error) {
+        console.error("Error parsing progress data:", error);
       }
-    } catch (error) {
-      // User cancelled or error occurred
-      console.log("Folder selection cancelled or failed");
-    }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error("Progress stream error:", error);
+      eventSource.close();
+    };
+
+    return eventSource;
   };
 
-  const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const firstFile = files[0];
-
-      // @ts-ignore - webkitRelativePath exists on File objects
-      const relativePath = firstFile.webkitRelativePath;
-
-      if (relativePath) {
-        const pathParts = relativePath.split("/");
-        const folderName = pathParts[0];
-
-        // Try to construct a realistic full path
-        const isWindows = navigator.userAgent.includes("Windows");
-        let fullPath = "";
-
-        // Try to get better path information
-        // @ts-ignore - Some browsers might provide additional path properties
-        if (firstFile.path) {
-          // @ts-ignore
-          let filePath = firstFile.path;
-          // Convert to Windows format if needed
-          if (isWindows) {
-            filePath = filePath.replace(/\//g, "\\");
-          }
-          // Extract the directory path
-          const filePathParts = filePath.split(isWindows ? "\\" : "/");
-          const folderIndex = filePathParts.findIndex(
-            (part: string) => part === folderName
-          );
-          if (folderIndex >= 0) {
-            fullPath = filePathParts
-              .slice(0, folderIndex + 1)
-              .join(isWindows ? "\\" : "/");
-          }
-        }
-
-        // If we couldn't get the full path, create a reasonable default
-        if (!fullPath) {
-          const userName = "ANURAN"; // Based on your system, but user can edit this
-          if (isWindows) {
-            fullPath = `C:\\Users\\${userName}\\Desktop\\${folderName}`;
-          } else {
-            fullPath = `/Users/${userName}/Desktop/${folderName}`;
-          }
-        }
-
-        setFormData({
-          ...formData,
-          outputFolder: fullPath,
-        });
-      }
-    }
-  };
-
-  const handleStart = () => {
+  const handleStart = async () => {
     if (
       !formData.scrapeSite ||
       !formData.productName ||
@@ -203,14 +157,51 @@ export default function Home() {
       alert("Please fill in all fields");
       return;
     }
+
     setIsProcessing(true);
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false);
-      alert(
-        "Scraping process started! You will receive an email notification when complete."
+    setErrorMessage("");
+    setProgressStep(0);
+    setProgressDetails("");
+    setProcessingStatus("Initializing scraping workflow...");
+
+    try {
+      const response = await fetch("/api/scrape", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to start scraping");
+      }
+
+      // Connect to progress stream
+      const eventSource = connectToProgressStream(result.sessionId);
+
+      // Store reference to close on component unmount
+      const cleanup = () => {
+        eventSource.close();
+      };
+
+      // Cleanup on unmount
+      window.addEventListener("beforeunload", cleanup);
+
+      return () => {
+        window.removeEventListener("beforeunload", cleanup);
+        eventSource.close();
+      };
+    } catch (error) {
+      console.error("Error starting scraping:", error);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unknown error occurred"
       );
-    }, 2000);
+      setIsProcessing(false);
+      setProcessingStatus("");
+    }
   };
 
   const toggleChatbot = () => {
@@ -345,52 +336,18 @@ export default function Home() {
                 />
               </div>
 
-              {/* Output Folder Input with Folder Picker */}
+              {/* Output Folder Input */}
               <div className="group">
                 <label className="block text-white text-sm font-medium mb-2 group-hover:text-pink-300 transition-colors">
                   Folder in which you want to save the output and all images?
                 </label>
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    name="outputFolder"
-                    value={formData.outputFolder}
-                    onChange={handleInputChange}
-                    placeholder="e.g., /downloads/scraped-data"
-                    className="flex-1 p-4 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-transparent transition-all duration-300 hover:bg-white/30"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleFolderSelect}
-                    className="px-6 py-4 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-medium rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg flex items-center gap-2 whitespace-nowrap"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"
-                      />
-                    </svg>
-                    Browse
-                  </button>
-                </div>
-
-                {/* Hidden file input for directory selection fallback */}
                 <input
-                  ref={folderInputRef}
-                  type="file"
-                  // @ts-ignore - webkitdirectory is a valid attribute
-                  webkitdirectory=""
-                  directory=""
-                  multiple
-                  onChange={handleFolderInputChange}
-                  className="hidden"
+                  type="text"
+                  name="outputFolder"
+                  value={formData.outputFolder}
+                  onChange={handleInputChange}
+                  placeholder="e.g., C:\Users\ANURAN\Downloads\scraped-data"
+                  className="w-full p-4 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-transparent transition-all duration-300 hover:bg-white/30"
                 />
               </div>
 
@@ -408,6 +365,72 @@ export default function Home() {
                   className="w-full p-4 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent transition-all duration-300 hover:bg-white/30"
                 />
               </div>
+
+              {/* Status Messages and Progress */}
+              {(processingStatus || errorMessage) && (
+                <div className="pt-4">
+                  {processingStatus && (
+                    <div className="mb-4 p-4 bg-blue-500/20 border border-blue-400/30 rounded-xl backdrop-blur-sm">
+                      <div className="space-y-3">
+                        {/* Progress Header */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-400 mr-3"></div>
+                            <span className="text-blue-100 text-sm font-medium">
+                              Step {progressStep}/{totalSteps}
+                            </span>
+                          </div>
+                          <span className="text-blue-200 text-xs">
+                            {Math.round((progressStep / totalSteps) * 100)}%
+                          </span>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full bg-blue-900/30 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-gradient-to-r from-blue-400 to-blue-300 h-2 rounded-full transition-all duration-500 ease-out"
+                            style={{
+                              width: `${(progressStep / totalSteps) * 100}%`,
+                            }}
+                          ></div>
+                        </div>
+
+                        {/* Status Message */}
+                        <div className="text-blue-100 text-sm">
+                          {processingStatus}
+                        </div>
+
+                        {/* Progress Details */}
+                        {progressDetails && (
+                          <div className="text-blue-200 text-xs bg-blue-900/20 rounded p-2 font-mono max-h-20 overflow-y-auto">
+                            {progressDetails}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {errorMessage && (
+                    <div className="mb-4 p-4 bg-red-500/20 border border-red-400/30 rounded-xl backdrop-blur-sm">
+                      <div className="flex items-center">
+                        <svg
+                          className="w-5 h-5 text-red-400 mr-3"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <span className="text-red-100 text-sm">
+                          {errorMessage}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Start Button */}
               <div className="pt-4">
