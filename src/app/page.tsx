@@ -109,9 +109,22 @@ export default function Home() {
       if ("showDirectoryPicker" in window) {
         // @ts-ignore - TypeScript doesn't know about showDirectoryPicker yet
         const directoryHandle = await window.showDirectoryPicker();
+
+        // File System Access API doesn't provide full system paths for security reasons
+        // So we'll create a placeholder path that the user can edit
+        const isWindows = navigator.userAgent.includes("Windows");
+        const userName = "User"; // We can't access the actual username from browser
+
+        let suggestedPath;
+        if (isWindows) {
+          suggestedPath = `C:\\Users\\${userName}\\Desktop\\${directoryHandle.name}`;
+        } else {
+          suggestedPath = `/Users/${userName}/Desktop/${directoryHandle.name}`;
+        }
+
         setFormData({
           ...formData,
-          outputFolder: directoryHandle.name,
+          outputFolder: suggestedPath,
         });
       } else {
         // Fallback: use directory input
@@ -128,16 +141,53 @@ export default function Home() {
   const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      // Get the path from the first file (webkitRelativePath gives us the folder structure)
       const firstFile = files[0];
+
       // @ts-ignore - webkitRelativePath exists on File objects
       const relativePath = firstFile.webkitRelativePath;
+
       if (relativePath) {
-        // Extract just the folder name (first part of the path)
-        const folderName = relativePath.split("/")[0];
+        const pathParts = relativePath.split("/");
+        const folderName = pathParts[0];
+
+        // Try to construct a realistic full path
+        const isWindows = navigator.userAgent.includes("Windows");
+        let fullPath = "";
+
+        // Try to get better path information
+        // @ts-ignore - Some browsers might provide additional path properties
+        if (firstFile.path) {
+          // @ts-ignore
+          let filePath = firstFile.path;
+          // Convert to Windows format if needed
+          if (isWindows) {
+            filePath = filePath.replace(/\//g, "\\");
+          }
+          // Extract the directory path
+          const filePathParts = filePath.split(isWindows ? "\\" : "/");
+          const folderIndex = filePathParts.findIndex(
+            (part: string) => part === folderName
+          );
+          if (folderIndex >= 0) {
+            fullPath = filePathParts
+              .slice(0, folderIndex + 1)
+              .join(isWindows ? "\\" : "/");
+          }
+        }
+
+        // If we couldn't get the full path, create a reasonable default
+        if (!fullPath) {
+          const userName = "ANURAN"; // Based on your system, but user can edit this
+          if (isWindows) {
+            fullPath = `C:\\Users\\${userName}\\Desktop\\${folderName}`;
+          } else {
+            fullPath = `/Users/${userName}/Desktop/${folderName}`;
+          }
+        }
+
         setFormData({
           ...formData,
-          outputFolder: folderName,
+          outputFolder: fullPath,
         });
       }
     }
