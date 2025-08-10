@@ -7,6 +7,7 @@ const progressStreams = new Map<
   {
     controller: ReadableStreamDefaultController;
     sessionId: string;
+    closing?: boolean;
   }
 >();
 
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       // Store the controller for this session
-      progressStreams.set(sessionId, { controller, sessionId });
+      progressStreams.set(sessionId, { controller, sessionId, closing: false });
 
       // Send initial connection message
       controller.enqueue(
@@ -66,10 +67,24 @@ export function sendProgressUpdate(sessionId: string, update: ProgressUpdate) {
 
       // If completed or error, close the stream after a short delay
       if (update.status === "completed" || update.status === "error") {
-        setTimeout(() => {
-          stream.controller.close();
-          progressStreams.delete(sessionId);
-        }, 1000);
+        // Mark as closing to prevent multiple close attempts
+        if (!stream.closing) {
+          stream.closing = true;
+          setTimeout(() => {
+            try {
+              if (progressStreams.has(sessionId)) {
+                const currentStream = progressStreams.get(sessionId);
+                if (currentStream && currentStream.controller) {
+                  currentStream.controller.close();
+                }
+                progressStreams.delete(sessionId);
+              }
+            } catch (closeError) {
+              console.error("Error closing stream:", closeError);
+              progressStreams.delete(sessionId);
+            }
+          }, 1000);
+        }
       }
     } catch (error) {
       console.error("Error sending progress update:", error);

@@ -42,13 +42,13 @@ RECIPIENT_EMAIL = sys.argv[2]
 
 # Find the Excel files dynamically based on what's available
 excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('.xlsx')]
-analysis_files = [f for f in excel_files if f.endswith('_product_analysis.xlsx')]
+filtered_files = [f for f in excel_files if f.endswith('_filtered_products.xlsx')]
 merged_files = [f for f in excel_files if f.endswith('_merged_analysis.xlsx')]
 
 # Define the specific Excel files to attach
 REQUIRED_FILES = []
-if analysis_files:
-    REQUIRED_FILES.append(analysis_files[0])  # Product analysis file
+if filtered_files:
+    REQUIRED_FILES.append(filtered_files[0])  # Product analysis file
 if merged_files:
     REQUIRED_FILES.append(merged_files[0])    # Merged analysis file
 
@@ -146,8 +146,8 @@ def main():
         
         # Extract product name from the first analysis file for dynamic subject
         product_name = "Products"
-        if analysis_files:
-            product_name = analysis_files[0].replace('_product_analysis.xlsx', '').title()
+        if filtered_files:
+            product_name = filtered_files[0].replace('_filtered_products.xlsx', '').title()
 
         # Enhanced email content
         email_subject = f"Complete Product Analysis Results - {product_name}"
@@ -162,7 +162,7 @@ Please find the attached comprehensive analysis files for {product_name} product
 {file_list}
 
 File Descriptions:
-• *_product_analysis.xlsx: Original product analysis with ITC classification, ratings, and specifications
+• *_filtered_products.xlsx: Filtered product list with relevant products containing the search term
 • *_merged_analysis.xlsx: Complete analysis with extracted text from images and contact information
 • qr_barcode_results_[timestamp].xlsx: QR code and barcode detection results with URL redirects
 

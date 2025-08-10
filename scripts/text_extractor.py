@@ -41,13 +41,13 @@ if len(sys.argv) < 2:
 
 HOTFOLDER_PATH = sys.argv[1]
 
-# Find the product analysis Excel file dynamically
-excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_product_analysis.xlsx')]
+# Find the filtered products Excel file dynamically
+excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_filtered_products.xlsx')]
 if not excel_files:
-    print("❌ No product analysis Excel file found. Please run previous agents first.")
+    print("❌ No filtered products Excel file found. Please run product_analyzer.py first.")
     sys.exit(1)
 
-INPUT_EXCEL_FILE = excel_files[0]  # Use the first (should be only one) analysis file
+INPUT_EXCEL_FILE = excel_files[0]  # Use the first (should be only one) filtered file
 INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
 
 # PROMPT for text extraction
@@ -211,22 +211,71 @@ def update_main_excel(main_df, product_folders_data):
         if col_name not in main_df.columns:
             main_df[col_name] = ""
     
-    # Update rows with extracted text
+    # Update rows with extracted text using proper folder matching
     for folder_name, texts in product_folders_data.items():
-        # Find the corresponding row in the dataframe
-        # We'll match based on the folder name pattern
-        for idx, row in main_df.iterrows():
-            product_title = str(row.get('title', ''))
-            # Create expected folder name for comparison
-            safe_name = product_title.replace(' ', '_')[:50]  # Simplified matching
+        # Extract product index from folder name (e.g., "product_003_Name" -> 3)
+        try:
+            # Folder format: product_XXX_ProductName
+            if folder_name.startswith('product_'):
+                parts = folder_name.split('_')
+                if len(parts) >= 2:
+                    product_idx = int(parts[1])  # Extract the numeric index
+                    
+                    # Use 1-based indexing to match DataFrame rows (product_001 -> row 0)
+                    df_row_idx = product_idx - 1
+                    
+                    if 0 <= df_row_idx < len(main_df):
+                        # Update image columns for this product
+                        for i, text in enumerate(texts, 1):
+                            col_name = f"image {i}"
+                            if col_name in main_df.columns:
+                                # Limit text length for Excel and clean it
+                                clean_text = str(text).replace('\n', ' ').replace('\r', ' ')[:1000]
+                                main_df.at[df_row_idx, col_name] = clean_text
+                        
+                        product_title = main_df.at[df_row_idx, 'title'] if 'title' in main_df.columns else 'Unknown'
+                        print(f"✅ Updated text for product {product_idx}: {product_title[:50]}...")
+                    else:
+                        print(f"⚠️ Product index {product_idx} out of range for folder: {folder_name}")
+                else:
+                    print(f"⚠️ Unexpected folder name format: {folder_name}")
+            else:
+                print(f"⚠️ Folder doesn't start with 'product_': {folder_name}")
+                
+        except (ValueError, IndexError) as e:
+            print(f"❌ Error processing folder {folder_name}: {e}")
+            # Fallback: try to match by title similarity (last resort)
+            best_match_idx = None
+            best_similarity = 0
             
-            if safe_name.lower() in folder_name.lower() or any(word.lower() in folder_name.lower() for word in product_title.split()[:3]):
-                # Update image columns for this product
+            # Extract cleaned product name from folder
+            folder_clean = folder_name.replace('product_', '').replace('_', ' ')
+            folder_words = set(folder_clean.lower().split())
+            
+            for idx, row in main_df.iterrows():
+                title = str(row.get('title', '')).lower()
+                title_words = set(title.split())
+                
+                # Calculate word overlap similarity
+                common_words = folder_words.intersection(title_words)
+                similarity = len(common_words) / max(len(folder_words), len(title_words), 1)
+                
+                if similarity > best_similarity and similarity > 0.3:  # At least 30% similarity
+                    best_similarity = similarity
+                    best_match_idx = idx
+            
+            if best_match_idx is not None:
+                # Update image columns for matched product
                 for i, text in enumerate(texts, 1):
                     col_name = f"image {i}"
                     if col_name in main_df.columns:
-                        main_df.at[idx, col_name] = text[:1000]  # Limit text length for Excel
-                break
+                        clean_text = str(text).replace('\n', ' ').replace('\r', ' ')[:1000]
+                        main_df.at[best_match_idx, col_name] = clean_text
+                
+                product_title = main_df.at[best_match_idx, 'title'] if 'title' in main_df.columns else 'Unknown'
+                print(f"✅ Fallback match for {folder_name}: {product_title[:50]} (similarity: {best_similarity:.2f})")
+            else:
+                print(f"❌ No suitable match found for folder: {folder_name}")
     
     return main_df
 

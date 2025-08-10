@@ -35,17 +35,17 @@ if len(sys.argv) < 2:
 
 HOTFOLDER_PATH = sys.argv[1]
 
-# Find the product analysis Excel file dynamically
-excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_product_analysis.xlsx')]
+# Find the filtered products Excel file dynamically
+excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_filtered_products.xlsx')]
 if not excel_files:
-    print("❌ No product analysis Excel file found. Please run previous agents first.")
+    print("❌ No filtered products Excel file found. Please run product_analyzer.py first.")
     sys.exit(1)
 
 INPUT_EXCEL_FILE = excel_files[0]
 INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
 
 # Extract product name from the Excel file name to create output file name
-product_name = INPUT_EXCEL_FILE.replace('_product_analysis.xlsx', '')
+product_name = INPUT_EXCEL_FILE.replace('_filtered_products.xlsx', '')
 OUTPUT_EXCEL_FILE = f"{product_name}_merged_analysis.xlsx"
 OUTPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, OUTPUT_EXCEL_FILE)
 

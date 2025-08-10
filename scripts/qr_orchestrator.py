@@ -47,8 +47,8 @@ if len(sys.argv) < 2:
 
 HOTFOLDER_PATH = sys.argv[1]
 
-# Find the product analysis Excel file dynamically (optional for QR detection)
-excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_product_analysis.xlsx')]
+# Find the filtered products Excel file dynamically (optional for QR detection)
+excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_filtered_products.xlsx')]
 if excel_files:
     INPUT_EXCEL_FILE = excel_files[0]
     INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
