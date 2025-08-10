@@ -107,8 +107,6 @@ export default function Home() {
     }
   };
 
-
-
   const connectToProgressStream = (sessionId: string) => {
     const eventSource = new EventSource(`/api/progress?sessionId=${sessionId}`);
 

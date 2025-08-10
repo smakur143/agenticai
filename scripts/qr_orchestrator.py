@@ -1,15 +1,14 @@
 """
 Agent 2: QR Code & Barcode Orchestrator
 =======================================
-This agent processes image folders created by Agent 2 Image Scraper, detects both QR codes
-and barcodes in all images and PDFs, and saves the consolidated results in a single Excel file.
+This agent scans product folders for .jpg images, detects QR codes and barcodes, and saves
+consolidated results in a single Excel file.
 
 Features:
 - Processes all product folders from image scraper
-- Detects QR codes and barcodes in images (JPG, JPEG, PNG) and PDFs
-- Handles QR codes (URLs) and barcodes (numbers) differently
+- Detects QR codes and barcodes in .jpg images
 - For QR codes: Extracts URLs and follows redirects using Selenium
-- For barcodes: Extracts numeric/text data (no redirect checking)
+- For barcodes: Extracts decoded data (no redirect checking)
 - Creates code snapshots with appropriate naming
 - Saves consolidated results in Excel format with detailed columns
 - No external server dependencies - runs standalone
@@ -21,14 +20,9 @@ import sys
 import pandas as pd
 import glob
 import cv2
-import fitz  # PyMuPDF
-import requests
-import numpy as np
 from pyzbar import pyzbar
-from PIL import Image, ImageDraw
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
 from datetime import datetime
 
 # Configure UTF-8 encoding for console output (fixes Windows Unicode issues)
@@ -47,35 +41,7 @@ if len(sys.argv) < 2:
 
 HOTFOLDER_PATH = sys.argv[1]
 
-# Find the filtered products Excel file dynamically (optional for QR detection)
-excel_files = [f for f in os.listdir(HOTFOLDER_PATH) if f.endswith('_filtered_products.xlsx')]
-if excel_files:
-    INPUT_EXCEL_FILE = excel_files[0]
-    INPUT_EXCEL_PATH = os.path.join(HOTFOLDER_PATH, INPUT_EXCEL_FILE)
-else:
-    INPUT_EXCEL_FILE = None
-    INPUT_EXCEL_PATH = None
-
-QR_RESULTS_EXCEL = "qr_detection_results.xlsx"
-QR_RESULTS_PATH = os.path.join(HOTFOLDER_PATH, QR_RESULTS_EXCEL)
-
-def get_second_page_image(pdf_path, dpi=300):
-    """Extract second page from PDF as image for QR detection"""
-    try:
-        doc = fitz.open(pdf_path)
-        if len(doc) < 2:
-            # If PDF has less than 2 pages, use first page
-            page = doc.load_page(0)
-        else:
-            page = doc.load_page(1)  # Second page (0-indexed)
-        
-        pix = page.get_pixmap(dpi=dpi)
-        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-        doc.close()
-        return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    except Exception as e:
-        print(f"❌ Error processing PDF: {str(e)}")
-        return None
+# Legacy inputs/paths and PDF helpers removed (processing .jpg only)
 
 def detect_codes_and_decode(image):
     """Detect both QR codes and barcodes using pyzbar"""
@@ -184,29 +150,19 @@ def process_product_folders_for_qr(driver):
         all_files = [f for f in all_files if not f.endswith('product_info.txt') and 'qr_snapshot' not in f]
         all_files.sort()
         
-        print(f"🖼️ Found {len(all_files)} files (images + PDFs) to scan for QR codes and barcodes")
+        print(f"🖼️ Found {len(all_files)} .jpg images to scan for QR codes and barcodes")
         
         folder_code_count = 0
         for file_path in all_files:
             file_name = os.path.basename(file_path)
-            file_ext = file_name.lower().split('.')[-1]
             print(f"🔍 Scanning: {file_name}")
             
             try:
-                # Process based on file type
-                if file_ext == 'pdf':
-                    print(f"📄 Processing PDF: {file_name} - extracting page for code detection")
-                    image = get_second_page_image(file_path)
-                    if image is None:
-                        raise Exception(f"Could not process PDF file: {file_name}")
-                elif file_ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp']:
-                    print(f"🖼️ Processing image: {file_name}")
-                    image = cv2.imread(file_path)
-                    if image is None:
-                        raise Exception(f"Could not read image file: {file_name}")
-                else:
-                    print(f"⚠️ Unsupported file type: {file_name}")
-                    continue
+                # Read .jpg image
+                print(f"🖼️ Processing image: {file_name}")
+                image = cv2.imread(file_path)
+                if image is None:
+                    raise Exception(f"Could not read image file: {file_name}")
                 
                 # Detect QR codes and barcodes
                 code_results = detect_codes_and_decode(image)
@@ -351,7 +307,7 @@ def main():
         print('\n🎉 QR code and barcode detection completed successfully!')
         print('📋 Excel Results include:')
         print('   • folder_name: Product folder name')
-        print('   • image_name: File name (image/PDF)')
+        print('   • image_name: File name (image)')
         print('   • code_detected: Yes/No if any code found')
         print('   • code_type: Type of code (QRCODE, CODE128, EAN13, etc.)')
         print('   • is_qr_code: Yes if QR code, No if barcode')
