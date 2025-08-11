@@ -107,16 +107,37 @@ class ScrapingOrchestrator {
         "Starting product analysis and scraping...",
         "running"
       );
-      await this.runPythonScript("product_analyzer.py", [
-        params.scrapeSite,
-        params.productName,
-        params.outputFolder,
-      ]);
+      const site = (params.scrapeSite || "").toLowerCase();
+      if (site === "blinkit") {
+        // Run Blinkit scraper which can also download images
+        await this.runPythonScript("blinkit.py", [
+          "--brand",
+          params.productName,
+          "--out-dir",
+          params.outputFolder,
+          "--images",
+        ]);
+      } else {
+        // Default to Amazon product analyzer
+        await this.runPythonScript("product_analyzer.py", [
+          params.scrapeSite,
+          params.productName,
+          params.outputFolder,
+        ]);
+      }
 
       // Step 2: Image Scraping
       this.currentStep = 2;
-      this.updateProgress("Scraping product images...", "running");
-      await this.runPythonScript("image_scraper.py", [params.outputFolder]);
+      if (site === "blinkit") {
+        // Blinkit script already downloaded images into product_XXX folders
+        this.updateProgress(
+          "Blinkit: Product analysis and image scraping completed (steps 1 & 2)",
+          "running"
+        );
+      } else {
+        this.updateProgress("Scraping product images...", "running");
+        await this.runPythonScript("image_scraper.py", [params.outputFolder]);
+      }
 
       // Step 3: Text Extraction
       this.currentStep = 3;
@@ -181,24 +202,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Only Amazon is supported currently
-    if (body.scrapeSite !== "amazon") {
+    // Supported sites: Amazon, Blinkit
+    const supportedSites = ["amazon", "blinkit"] as const;
+    const selectedSite = (body.scrapeSite || "").toLowerCase();
+    if (!supportedSites.includes(selectedSite as any)) {
       return NextResponse.json(
-        { error: "Currently only Amazon is supported" },
+        { error: "Supported sites are: Amazon, Blinkit" },
         { status: 400 }
       );
     }
 
     // Resolve and validate output folder path
     const resolvedOutputFolder = path.resolve(body.outputFolder);
-    
+
     // Create output folder if it doesn't exist
     if (!fs.existsSync(resolvedOutputFolder)) {
       try {
         fs.mkdirSync(resolvedOutputFolder, { recursive: true });
         console.log(`✅ Created output folder: ${resolvedOutputFolder}`);
       } catch (error) {
-        console.error(`❌ Failed to create output folder: ${resolvedOutputFolder}`, error);
+        console.error(
+          `❌ Failed to create output folder: ${resolvedOutputFolder}`,
+          error
+        );
         return NextResponse.json(
           {
             error: `Failed to create output folder at "${resolvedOutputFolder}": ${

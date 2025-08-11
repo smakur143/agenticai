@@ -29,8 +29,8 @@ const platforms: Platform[] = [
     color: "from-orange-600 to-yellow-600",
   },
   {
-    value: "bigbasket",
-    label: "Big Basket",
+    value: "blinkit",
+    label: "Blinkit",
     icon: "🥬",
     color: "from-green-500 to-green-600",
   },
