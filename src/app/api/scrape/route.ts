@@ -109,13 +109,29 @@ class ScrapingOrchestrator {
       );
       const site = (params.scrapeSite || "").toLowerCase();
       if (site === "blinkit") {
-        // Run Blinkit scraper which can also download images
+        // Run Blinkit scraper which also downloads images
         await this.runPythonScript("blinkit.py", [
           "--brand",
           params.productName,
           "--out-dir",
           params.outputFolder,
           "--images",
+        ]);
+      } else if (site === "flipkart") {
+        // Run Flipkart scraper which also downloads images
+        await this.runPythonScript("flipkart.py", [
+          "--brand",
+          params.productName,
+          "--out-dir",
+          params.outputFolder,
+        ]);
+      } else if (site === "zepto") {
+        // Run Zepto scraper which also downloads images
+        await this.runPythonScript("zepto.py", [
+          "--brand",
+          params.productName,
+          "--out-dir",
+          params.outputFolder,
         ]);
       } else {
         // Default to Amazon product analyzer
@@ -128,10 +144,11 @@ class ScrapingOrchestrator {
 
       // Step 2: Image Scraping
       this.currentStep = 2;
-      if (site === "blinkit") {
-        // Blinkit script already downloaded images into product_XXX folders
+      if (site === "blinkit" || site === "flipkart" || site === "zepto") {
+        // These scripts already download images into product_XXX folders
+        const siteLabel = site.charAt(0).toUpperCase() + site.slice(1);
         this.updateProgress(
-          "Blinkit: Product analysis and image scraping completed (steps 1 & 2)",
+          `${siteLabel}: Product analysis and image scraping completed (steps 1 & 2)`,
           "running"
         );
       } else {
@@ -202,8 +219,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Supported sites: Amazon, Blinkit
-    const supportedSites = ["amazon", "blinkit"] as const;
+    // Supported sites: Amazon, Blinkit, Flipkart, Zepto
+    const supportedSites = ["amazon", "blinkit", "flipkart", "zepto"] as const;
     const selectedSite = (body.scrapeSite || "").toLowerCase();
     if (!supportedSites.includes(selectedSite as any)) {
       return NextResponse.json(

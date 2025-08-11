@@ -34,6 +34,12 @@ const platforms: Platform[] = [
     icon: "🥬",
     color: "from-green-500 to-green-600",
   },
+  {
+    value: "zepto",
+    label: "Zepto",
+    icon: "⚡",
+    color: "from-purple-500 to-pink-500",
+  },
 ];
 
 export default function Home() {
