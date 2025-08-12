@@ -32,6 +32,17 @@ def slugify(text: str) -> str:
     return slug.strip('-')
 
 
+def normalize_for_match(text: str) -> str:
+    """
+    Normalize text for robust substring matching:
+    - Lowercase
+    - Remove all non-alphanumeric characters (including spaces)
+    This way, 'Master Chef' and 'MasterChef' both normalize to 'masterchef'.
+    """
+    if text is None:
+        return ""
+    return "".join(ch.lower() for ch in str(text) if ch.isalnum())
+
 class BlinkitScraper:
     def __init__(self, headless: bool = False):
         self.base_url = "https://blinkit.com"
@@ -485,13 +496,19 @@ class BlinkitScraper:
 
 def main():
     parser = argparse.ArgumentParser(description="Blinkit product scraper")
-    parser.add_argument("--brand", required=True, help="Brand or query to search (spaces will be encoded as %20)")
+    parser.add_argument(
+        "--brand",
+        required=True,
+        nargs="+",
+        help="Brand or query to search (can contain spaces; quotes optional; spaces will be encoded as %20)",
+    )
     parser.add_argument("--out-dir", default=os.path.join(os.getcwd(), "output"), help="Output directory for Excel and images")
     parser.add_argument("--headless", action="store_true", help="Run Chrome in headless mode")
     parser.add_argument("--images", action="store_true", help="Also open each product and scrape/download images")
     args = parser.parse_args()
 
-    brand = args.brand.strip()
+    # Support multi-word brand names without requiring quotes
+    brand = " ".join(args.brand).strip() if isinstance(args.brand, list) else str(args.brand).strip()
     out_dir = os.path.abspath(args.out_dir)
     brand_underscore = brand.replace(' ', '_')
     excel_path = os.path.join(out_dir, f"blinkit_{brand_underscore}_links.xlsx")
@@ -523,7 +540,14 @@ def main():
                 df_all = None
 
         if df_all is not None and not df_all.empty and 'Title' in df_all.columns:
-            mask = df_all['Title'].astype(str).str.contains(brand, case=False, na=False)
+            # Flexible matching: direct case-insensitive contains OR normalized contains
+            titles_series = df_all['Title'].astype(str)
+            norm_titles = titles_series.apply(normalize_for_match)
+            norm_brand = normalize_for_match(brand)
+            # Escape regex in brand for the direct contains check
+            direct_mask = titles_series.str.contains(re.escape(brand), case=False, na=False)
+            normalized_mask = norm_titles.str.contains(norm_brand, na=False)
+            mask = direct_mask | normalized_mask
             df_filtered = df_all.loc[mask].copy()
             filtered_path_xlsx = os.path.join(out_dir, f"blinkit_{brand_underscore}_links_filtered.xlsx")
             try:
