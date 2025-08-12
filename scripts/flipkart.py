@@ -8,6 +8,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 try:
     import undetected_chromedriver as uc
     UC_AVAILABLE = True
@@ -368,8 +369,44 @@ def main():
                                 final_url = parts[-1].split(' ')[0]
                         return final_url
 
+                    def get_main_image_url():
+                        """Return the current main product image URL (prefer highest-res from srcset)."""
+                        js = """
+                        const selectors = [
+                          'div._8id3KM img.DByuf4',
+                          'div._8id3KM img',
+                          'img.DByuf4',
+                          'img[class*="DByuf4"]',
+                          'img[src*="flipkart.com/image/"]'
+                        ];
+                        let img = null;
+                        for (const sel of selectors) {
+                          const el = document.querySelector(sel);
+                          if (el) { img = el; break; }
+                        }
+                        if (!img) return null;
+                        const rect = img.getBoundingClientRect();
+                        const src = img.currentSrc || img.src || '';
+                        const srcset = img.srcset || '';
+                        return { src, srcset, w: rect.width, h: rect.height };
+                        """
+                        try:
+                            info = driver.execute_script(js)
+                        except Exception:
+                            info = None
+                        if not info:
+                            return None
+                        final_url = info.get('src')
+                        srcset = info.get('srcset') or ''
+                        if srcset:
+                            parts = [p.strip() for p in srcset.split(',') if p.strip()]
+                            if parts:
+                                final_url = parts[-1].split(' ')[0]
+                        return final_url
+
                     # 3) Traverse thumbnails via ul/li structure to capture ALL images
                     images_saved_count = 0
+                    seen_image_urls = set()
 
                     # Try robustly to locate li thumbnails under a ul container
                     li_candidates = []
@@ -412,29 +449,44 @@ def main():
                                 time.sleep(0.3)
                                 # Click the thumbnail image inside li if present, else the li itself
                                 try:
-                                    clickable = li_node.find_element(By.CSS_SELECTOR, "img")
+                                    # Prefer the small thumbnail image element for a proper click
+                                    clickable = li_node.find_element(By.CSS_SELECTOR, "img._0DkuPH, img")
                                 except Exception:
                                     try:
                                         clickable = li_node.find_element(By.CSS_SELECTOR, "div.HXf4Qp")
                                     except Exception:
                                         clickable = li_node
-                                driver.execute_script("arguments[0].click();", clickable)
+                                # Capture current main image before clicking this thumbnail
+                                prev_main_url = get_main_image_url() or extract_best_image_url()
 
-                                # Wait briefly and read the main image URL (save even if duplicate)
-                                max_attempts = 12
+                                # Try a real click first, then fallback to JS click
+                                try:
+                                    ActionChains(driver).move_to_element(clickable).pause(0.05).click(on_element=clickable).perform()
+                                except Exception:
+                                    driver.execute_script("arguments[0].click();", clickable)
+
+                                # Wait for the main image URL to change from previous
+                                max_attempts = 20
                                 current_image_url = None
 
                                 for attempt in range(max_attempts):
                                     time.sleep(0.4)
-                                    current_image_url = extract_best_image_url()
+                                    current_image_url = get_main_image_url() or extract_best_image_url()
+                                    # Break when we have a URL and it differs from the previous one
                                     if current_image_url:
-                                        break
+                                        if not prev_main_url or current_image_url != prev_main_url:
+                                            break
 
                                 if not current_image_url:
                                     print(f"⚠️ No image URL detected for thumbnail {thumb_idx}")
                                     continue
 
-                                # Save every image (no dedupe)
+                                # Skip duplicates if the URL hasn't changed across thumbnails
+                                if current_image_url in seen_image_urls:
+                                    print(f"↩️ Skipping duplicate image for thumbnail {thumb_idx}")
+                                    continue
+
+                                # Save image
                                 try:
                                     response = requests.get(current_image_url, timeout=12, headers={
                                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
@@ -445,6 +497,7 @@ def main():
                                     with open(img_path, 'wb') as f:
                                         f.write(response.content)
                                     images_saved_count += 1
+                                    seen_image_urls.add(current_image_url)
                                     print(f"✅ Saved image {thumb_idx} -> {img_path}")
                                 except Exception as e_dl:
                                     print(f"❌ Failed to download image {thumb_idx}: {e_dl}")
@@ -463,7 +516,7 @@ def main():
                                         parts = [p.strip() for p in srcset.split(',') if p.strip()]
                                         if parts:
                                             src = parts[-1].split(' ')[0]
-                                    if src:
+                                    if src and src not in seen_image_urls:
                                         try:
                                             response = requests.get(src, timeout=12, headers={
                                                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
@@ -474,6 +527,7 @@ def main():
                                             with open(img_path, 'wb') as f:
                                                 f.write(response.content)
                                             images_saved_count += 1
+                                            seen_image_urls.add(src)
                                             print(f"✅ Saved fallback thumbnail {t_i} -> {img_path}")
                                         except Exception as e_dl2:
                                             print(f"❌ Failed to download fallback thumbnail {t_i}: {e_dl2}")
@@ -484,7 +538,7 @@ def main():
                     else:
                         # If no li thumbnails, try to get the main product image directly as a fallback
                         try:
-                            main_image_url = extract_best_image_url()
+                            main_image_url = get_main_image_url() or extract_best_image_url()
                             if main_image_url:
                                 response = requests.get(main_image_url, timeout=12, headers={
                                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
