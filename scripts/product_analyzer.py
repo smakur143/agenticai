@@ -205,6 +205,99 @@ def extract_product_details(driver):
     except Exception as e:
         return {"Error": f"Error extracting details: {str(e)}"}
 
+def extract_size_variations(driver):
+    """Extract size/pack variations and their availability from product page.
+
+    Looks for the inline twister section for size options, clicks each variant,
+    and determines availability by checking for the presence of the global
+    out-of-stock container `#outOfStock`. Returns a human-readable string where
+    each line is in the format: "<label>: <status>".
+    """
+    try:
+        # Find the twister container for size options
+        container_selectors = [
+            "#inline-twister-expander-content-size_name",
+            "[id*='inline-twister-expander-content-'][id$='size_name']",
+            "div.dimension-expander-content.dimension-expander-content-expand",
+            "#tp-inline-twister-dim-values-container",
+        ]
+
+        container = None
+        for selector in container_selectors:
+            try:
+                container = driver.find_element(By.CSS_SELECTOR, selector)
+                break
+            except Exception:
+                continue
+
+        if not container:
+            return ""
+
+        # Find the list of variation items
+        try:
+            variations_list = container.find_element(By.CSS_SELECTOR, "ul.dimension-values-list")
+        except Exception:
+            return ""
+
+        variation_items = variations_list.find_elements(By.CSS_SELECTOR, "li")
+        if not variation_items:
+            return ""
+
+        results = []
+
+        for item in variation_items:
+            try:
+                # Scroll into view and attempt to select the variant
+                try:
+                    clickable = None
+                    try:
+                        clickable = item.find_element(By.CSS_SELECTOR, "input.a-button-input")
+                    except Exception:
+                        clickable = item
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", clickable)
+                    driver.execute_script("arguments[0].click();", clickable)
+                except Exception:
+                    pass
+
+                time.sleep(0.8)
+
+                # Extract the label for this variant
+                label_text = ""
+                try:
+                    label_el = item.find_element(By.CSS_SELECTOR, ".swatch-title-text-display")
+                    label_text = label_el.text.strip()
+                except Exception:
+                    try:
+                        announce_el = item.find_element(By.CSS_SELECTOR, "span[id^='size_name_'][id$='-announce']")
+                        label_text = announce_el.text.strip()
+                    except Exception:
+                        label_text = item.text.strip().split("\n")[0]
+
+                # Determine availability for this variant
+                # New logic: check presence of global out-of-stock section
+                status = "In Stock"
+                try:
+                    time.sleep(0.5)
+                    out_elems = driver.find_elements(By.CSS_SELECTOR, "#outOfStock")
+                    for el in out_elems:
+                        try:
+                            if el.is_displayed():
+                                status = "Unavailable"
+                                break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
+                if label_text:
+                    results.append(f"{label_text}: {status}")
+            except Exception:
+                continue
+
+        return "\n".join(results)
+    except Exception as e:
+        return ""
+
 def analyze_itc_response_nlp(response_text):
     """Advanced NLP-based sentiment analysis to determine if product is ITC"""
     if not response_text or response_text == "No response found":
@@ -339,7 +432,11 @@ def analyze_itc_response_nlp(response_text):
             return "No", -0.5, "NLP fallback - negative"
 
 def check_itc_product(url, product_title):
-    """Visit a product URL and check if it's an ITC product using Amazon's search feature"""
+    """Visit a product URL and check if it's an ITC product using Amazon's search feature.
+
+    Also extracts size/pack variations availability from the inline twister.
+    Returns: (response_text, rating, details, variations_text)
+    """
     try:
         print(f"🔍 Checking: {product_title}")
         driver.get(url)
@@ -352,6 +449,14 @@ def check_itc_product(url, product_title):
         # Extract product details
         details = extract_product_details(driver)
         print(f"📋 Details extracted: {len(details)} items")
+
+        # Extract size/pack variations and availability
+        variations_text = extract_size_variations(driver)
+        if variations_text:
+            lines_count = len([l for l in variations_text.split("\n") if l.strip()])
+            print(f"🎯 Variations found: {lines_count}")
+        else:
+            print("ℹ️ No variations section detected")
 
         # Click on "Search this page" link
         search_input_found = False
@@ -388,7 +493,7 @@ def check_itc_product(url, product_title):
                     continue
 
         if not search_input_found:
-            return "Not Verified", rating, details
+            return "Not Verified", rating, details, variations_text
 
         # Click submit button
         try:
@@ -397,7 +502,7 @@ def check_itc_product(url, product_title):
             print("✅ Clicked submit button")
         except Exception as e:
             print(f"❌ Failed to find submit button: {e}")
-            return "Not Verified", rating, details
+            return "Not Verified", rating, details, variations_text
 
         # Wait for response (10 seconds)
         print("⏳ Waiting for response...")
@@ -427,11 +532,11 @@ def check_itc_product(url, product_title):
             except:
                 continue
 
-        return response_text, rating, details
+        return response_text, rating, details, variations_text
 
     except Exception as e:
         print(f"❌ Error checking product: {e}")
-        return f"Error: {str(e)}", "Rating not available", {"Error": str(e)}
+        return f"Error: {str(e)}", "Rating not available", {"Error": str(e)}, ""
 
 def scrape_products_from_current_page(driver):
     """Scrape all product links from the current search results page"""
@@ -903,7 +1008,8 @@ def main():
             'diet_type': "",
             'other_details': "",
             'Is it ITC product?': "",
-            'ITC Product (Yes/No)': ""
+            'ITC Product (Yes/No)': "",
+            'variations': ""
         })
 
         print(f"\n📊 Initial dataset: {len(df)} products collected")
@@ -950,7 +1056,7 @@ def main():
             print(f"\n🛒 Processing product {idx+1}/{len(df)}: {product_title}")
             
             # Check if it's an ITC product and extract additional details
-            result, rating, details = check_itc_product(product_url, product_title)
+            result, rating, details, variations_text = check_itc_product(product_url, product_title)
             df.at[idx, 'Is it ITC product?'] = result
             df.at[idx, 'rating'] = rating
             
@@ -965,6 +1071,7 @@ def main():
             other_details = {k: v for k, v in details.items() 
                            if k not in ['Brand', 'Variety', 'Item Form', 'Net Quantity', 'Diet Type']}
             df.at[idx, 'other_details'] = str(other_details) if other_details else ""
+            df.at[idx, 'variations'] = variations_text
             
             # Perform NLP sentiment analysis only if result is not "Not Verified"
             if result != "Not Verified":
