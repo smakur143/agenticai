@@ -40,6 +40,83 @@ class ZeptoScraper:
             print(f"Error initializing Chrome driver: {e}")
             print("Please make sure you have Chrome and ChromeDriver installed")
            
+    def _collect_images_from_horizontal_carousel(self):
+        """Collect all product images from the horizontal scroll carousel.
+
+        The product page uses a horizontally scrollable container for images. We scroll
+        this container step-by-step and collect unique image URLs present within.
+        """
+        images_collected: list[str] = []
+        unique_image_ids: set[str] = set()
+
+        try:
+            # Find the scrollable carousel container (robust selector covers class variants)
+            carousel = self.wait.until(
+                EC.presence_of_element_located(
+                    (
+                        By.CSS_SELECTOR,
+                        "div.no-scrollbar.relative.flex.h-full.w-full.snap-x.snap-mandatory.overflow-x-scroll, "
+                        "div[class*='overflow-x-scroll'][class*='snap-x']"
+                    )
+                )
+            )
+        except TimeoutException:
+            return []
+
+        try:
+            # Scroll through the carousel and gather images
+            max_iterations = 20
+            iteration = 0
+            last_scroll_left = -1
+
+            while iteration < max_iterations:
+                iteration += 1
+
+                # Collect images currently in DOM for the carousel
+                img_elements = carousel.find_elements(By.CSS_SELECTOR, "img")
+                for img_elem in img_elements:
+                    src = img_elem.get_attribute("src") or ""
+                    if not src:
+                        continue
+                    # Only collect Zepto product_variant images
+                    if "/cms/product_variant/" not in src:
+                        continue
+
+                    # Derive image ID to avoid duplicates across resolutions
+                    try:
+                        image_id = src.split("/cms/product_variant/")[1].split("/")[0].split(".")[0]
+                    except Exception:
+                        image_id = src
+
+                    if image_id not in unique_image_ids:
+                        unique_image_ids.add(image_id)
+                        images_collected.append(src)
+
+                # Compute scroll positions
+                scroll_left = self.driver.execute_script("return arguments[0].scrollLeft;", carousel)
+                scroll_width = self.driver.execute_script("return arguments[0].scrollWidth;", carousel)
+                client_width = self.driver.execute_script("return arguments[0].clientWidth;", carousel)
+
+                # Stop if we've reached (or are very close to) the end
+                if scroll_left + client_width >= scroll_width - 5:
+                    break
+
+                # Stop if we somehow can't move further
+                if scroll_left == last_scroll_left:
+                    break
+                last_scroll_left = scroll_left
+
+                # Advance by one viewport width to reveal the next image
+                new_left = min(scroll_left + int(client_width * 0.95), scroll_width)
+                self.driver.execute_script("arguments[0].scrollTo({left: arguments[1], behavior: 'auto'});", carousel, new_left)
+                time.sleep(0.7)
+
+        except Exception:
+            # Fail silently to allow fallbacks
+            pass
+
+        return images_collected
+
     def search_products(self, search_query):
         """Search for products and get all product links by scrolling"""
         # Format search query for URL (replace spaces with +)
@@ -153,138 +230,123 @@ class ZeptoScraper:
             except NoSuchElementException:
                 product_data['rating'] = "N/A"
            
-            # Scrape all images by clicking through image preview buttons
-            image_buttons = self.driver.find_elements(By.CSS_SELECTOR,
-                "button[aria-label*='image-preview']")
-           
-            print(f"Found {len(image_buttons)} image preview buttons")
-           
-            # Use a more sophisticated approach to track unique images
-            captured_image_ids = set()  # Track unique image identifiers
-            all_possible_urls = set()   # Track all URL variations we've seen
-           
-            for i, button in enumerate(image_buttons):
-                try:
-                    print(f"\n--- Processing image button {i+1}/{len(image_buttons)} ---")
-                   
-                    # Click the image preview button
-                    self.driver.execute_script("arguments[0].click();", button)
-                    time.sleep(3)  # Wait for image to load completely
-                   
-                    # Collect all possible image URLs for this button
-                    potential_urls = []
-                   
-                    # Strategy 1: Get from main image display
-                    main_image_selectors = [
-                        "img[data-nimg='fill']",
-                        "img[fetchpriority='high']",
-                        "img[fetchpriority='low']",
-                        "img[decoding='sync']",
-                        "img[decoding='async']",
-                        "img[class*='relative'][class*='overflow-hidden']"
-                    ]
-                   
-                    for selector in main_image_selectors:
-                        try:
-                            img_elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                            for img_elem in img_elements:
-                                src = img_elem.get_attribute('src')
-                                if src and 'cms/product_variant' in src:
-                                    potential_urls.append(('main_display', src))
-                               
-                                # Also check srcset
-                                srcset = img_elem.get_attribute('srcset')
-                                if srcset:
-                                    for entry in srcset.split(','):
-                                        url = entry.strip().split(' ')[0]
-                                        if url and 'cms/product_variant' in url:
-                                            potential_urls.append(('srcset', url))
-                        except:
-                            continue
-                   
-                    # Strategy 2: Get from button thumbnail itself
+            # Prefer: Scrape images from the horizontal carousel by scrolling it
+            carousel_images = self._collect_images_from_horizontal_carousel()
+            if carousel_images:
+                print(f"Found {len(carousel_images)} images in horizontal carousel")
+                for idx, url in enumerate(carousel_images):
+                    product_data['images'].append({
+                        'image_index': idx,
+                        'image_url': url,
+                        'source_type': 'carousel'
+                    })
+            else:
+                # Fallback: click through any preview buttons if present
+                image_buttons = self.driver.find_elements(By.CSS_SELECTOR, "button[aria-label*='image-preview']")
+                print(f"Found {len(image_buttons)} image preview buttons (fallback mode)")
+
+                captured_image_ids = set()
+                all_possible_urls = set()
+
+                for i, button in enumerate(image_buttons):
                     try:
-                        button_img = button.find_element(By.CSS_SELECTOR, "img")
-                        button_src = button_img.get_attribute('src')
-                        if button_src and 'cms/product_variant' in button_src:
-                            potential_urls.append(('button_thumb', button_src))
-                           
-                            # Create high-res versions
-                            if 'tr:w-88' in button_src:
-                                high_res = button_src.replace('tr:w-88', 'tr:w-1280')
-                                potential_urls.append(('button_high_res', high_res))
-                           
-                            # Extract base image ID for comparison
-                            if '/cms/product_variant/' in button_src:
-                                parts = button_src.split('/cms/product_variant/')
-                                if len(parts) > 1:
-                                    image_id = parts[1].split('/')[0]  # Get the UUID part
-                                    base_url = f"{parts[0]}/cms/product_variant/{image_id}"
-                                   
-                                    # Generate different resolution versions
-                                    variations = [
-                                        f"{base_url}.jpeg",
-                                        f"{parts[0]}/production/tr:w-1280,ar-3000-3000,pr-true,f-auto,q-80/cms/product_variant/{image_id}.jpeg",
-                                        f"{parts[0]}/production/ik-seo/tr:w-1280,ar-3000-3000,pr-true,f-auto,q-80/cms/product_variant/{image_id}/",
-                                    ]
-                                   
-                                    for var_url in variations:
-                                        potential_urls.append(('generated', var_url))
-                    except:
-                        pass
-                   
-                    print(f"Found {len(potential_urls)} potential URLs for button {i+1}")
-                   
-                    # Now select the best URL that we haven't captured yet
-                    selected_url = None
-                    selected_type = None
-                   
-                    # Priority order: main_display > button_high_res > generated > srcset > button_thumb
-                    priority_order = ['main_display', 'button_high_res', 'generated', 'srcset', 'button_thumb']
-                   
-                    for url_type in priority_order:
-                        for source_type, url in potential_urls:
-                            if source_type == url_type and url not in all_possible_urls:
-                                # Extract image identifier for uniqueness check
+                        print(f"\n--- Processing image button {i+1}/{len(image_buttons)} ---")
+                        self.driver.execute_script("arguments[0].click();", button)
+                        time.sleep(2)
+
+                        potential_urls = []
+
+                        main_image_selectors = [
+                            "img[data-nimg='fill']",
+                            "img[fetchpriority='high']",
+                            "img[fetchpriority='low']",
+                            "img[decoding='sync']",
+                            "img[decoding='async']",
+                            "img[class*='relative'][class*='overflow-hidden']",
+                        ]
+                        for selector in main_image_selectors:
+                            try:
+                                img_elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                                for img_elem in img_elements:
+                                    src = img_elem.get_attribute('src')
+                                    if src and 'cms/product_variant' in src:
+                                        potential_urls.append(('main_display', src))
+                                    srcset = img_elem.get_attribute('srcset')
+                                    if srcset:
+                                        for entry in srcset.split(','):
+                                            url = entry.strip().split(' ')[0]
+                                            if url and 'cms/product_variant' in url:
+                                                potential_urls.append(('srcset', url))
+                            except Exception:
+                                continue
+
+                        try:
+                            button_img = button.find_element(By.CSS_SELECTOR, 'img')
+                            button_src = button_img.get_attribute('src')
+                            if button_src and 'cms/product_variant' in button_src:
+                                potential_urls.append(('button_thumb', button_src))
+                                if 'tr:w-88' in button_src:
+                                    high_res = button_src.replace('tr:w-88', 'tr:w-1280')
+                                    potential_urls.append(('button_high_res', high_res))
+                                if '/cms/product_variant/' in button_src:
+                                    parts = button_src.split('/cms/product_variant/')
+                                    if len(parts) > 1:
+                                        image_id = parts[1].split('/')[0]
+                                        base_url = f"{parts[0]}/cms/product_variant/{image_id}"
+                                        variations = [
+                                            f"{base_url}.jpeg",
+                                            f"{parts[0]}/production/tr:w-1280,ar-3000-3000,pr-true,f-auto,q-80/cms/product_variant/{image_id}.jpeg",
+                                            f"{parts[0]}/production/ik-seo/tr:w-1280,ar-3000-3000,pr-true,f-auto,q-80/cms/product_variant/{image_id}/",
+                                        ]
+                                        for var_url in variations:
+                                            potential_urls.append(('generated', var_url))
+                        except Exception:
+                            pass
+
+                        print(f"Found {len(potential_urls)} potential URLs for button {i+1}")
+
+                        selected_url = None
+                        selected_type = None
+                        priority_order = ['main_display', 'button_high_res', 'generated', 'srcset', 'button_thumb']
+                        for url_type in priority_order:
+                            for source_type, url in potential_urls:
+                                if source_type != url_type or url in all_possible_urls:
+                                    continue
                                 if '/cms/product_variant/' in url:
                                     parts = url.split('/cms/product_variant/')
                                     if len(parts) > 1:
-                                        image_id = parts[1].split('/')[0].split('.')[0]  # Get UUID without extension
-                                       
+                                        image_id = parts[1].split('/')[0].split('.')[0]
                                         if image_id not in captured_image_ids:
                                             selected_url = url
                                             selected_type = source_type
                                             captured_image_ids.add(image_id)
                                             break
+                            if selected_url:
+                                break
+
                         if selected_url:
-                            break
-                   
-                    # If we found a unique image, save it
-                    if selected_url:
-                        all_possible_urls.add(selected_url)
-                        product_data['images'].append({
-                            'image_index': i,
-                            'image_url': selected_url,
-                            'source_type': selected_type
-                        })
-                        print(f"✅ Captured image {i+1} [{selected_type}]: {selected_url}")
-                    else:
-                        # Force capture even if duplicate, but mark it
-                        if potential_urls:
-                            fallback_url = potential_urls[0][1]  # Take the first available URL
+                            all_possible_urls.add(selected_url)
                             product_data['images'].append({
                                 'image_index': i,
-                                'image_url': fallback_url,
-                                'source_type': 'duplicate_fallback'
+                                'image_url': selected_url,
+                                'source_type': selected_type,
                             })
-                            print(f"⚠️ Captured duplicate image {i+1}: {fallback_url}")
+                            print(f"✅ Captured image {i+1} [{selected_type}]: {selected_url}")
                         else:
-                            print(f"❌ No image found for button {i+1}")
-                       
-                except Exception as e:
-                    print(f"❌ Error processing button {i+1}: {e}")
-                    continue
-           
+                            if potential_urls:
+                                fallback_url = potential_urls[0][1]
+                                product_data['images'].append({
+                                    'image_index': i,
+                                    'image_url': fallback_url,
+                                    'source_type': 'duplicate_fallback',
+                                })
+                                print(f"⚠️ Captured duplicate image {i+1}: {fallback_url}")
+                            else:
+                                print(f"❌ No image found for button {i+1}")
+                    except Exception as e:
+                        print(f"❌ Error processing button {i+1}: {e}")
+                        continue
+
             print(f"\n🎯 Total unique images captured: {len([img for img in product_data['images'] if img.get('source_type') != 'duplicate_fallback'])}")
             print(f"📸 Total images including duplicates: {len(product_data['images'])}")
            
