@@ -4,6 +4,7 @@ import sys
 import argparse
 import requests
 import pandas as pd
+import re
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -66,12 +67,12 @@ def main():
     global HOTFOLDER_PATH, BRAND_KEYWORD
     # CLI args
     parser = argparse.ArgumentParser(description="Flipkart product scraper")
-    parser.add_argument("--brand", required=True, help="Brand keyword to search")
+    parser.add_argument("--brand", required=True, nargs="+", help="Brand keyword to search (can include spaces)")
     parser.add_argument("--out-dir", default=os.path.join(os.getcwd(), "output"), help="Output directory for Excel and images")
     parser.add_argument("--headless", action="store_true", help="Run browser headless (if supported)")
     args = parser.parse_args()
 
-    BRAND_KEYWORD = args.brand.strip()
+    BRAND_KEYWORD = " ".join(args.brand).strip()
     HOTFOLDER_PATH = os.path.abspath(args.out_dir)
     os.makedirs(HOTFOLDER_PATH, exist_ok=True)
     brand_underscore = BRAND_KEYWORD.replace(' ', '_')
@@ -286,7 +287,10 @@ def main():
             print(f"   Columns: {list(df_products.columns)}")
 
             # 1) Create a second Excel with rows where the brand keyword appears in product_title
-            df_brand = df_products[df_products['product_title'].str.contains(BRAND_KEYWORD, case=False, na=False)].copy()
+            # Normalize by removing spaces and lowercasing for robust matching (e.g., "ITCMasterChef" vs "ITC Master Chef")
+            normalized_brand = re.sub(r"\s+", "", BRAND_KEYWORD).lower()
+            title_series = df_products['product_title'].fillna('').str.replace(r"\s+", "", regex=True).str.lower()
+            df_brand = df_products[title_series.str.contains(normalized_brand, na=False)].copy()
             brand_excel_path = os.path.join(HOTFOLDER_PATH, f"flipkart_{brand_underscore}_links_filtered.xlsx")
             df_brand.to_excel(brand_excel_path, index=False)
             print(f"📝 Brand-filtered product data saved to: {brand_excel_path}")
